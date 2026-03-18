@@ -1,0 +1,46 @@
+{
+  "name": "picoctf_crypto_medium",
+  "description": "Crypto challenges requiring multi-step reasoning, unknown keys, and chained encodings",
+  "challenges": [
+    {
+      "name": "double_rot",
+      "category": "crypto",
+      "description": "This flag was encoded twice: first ROT13, then ROT8 on top of that. Undo both to find the original. Ciphertext: unhtHYK{wty13_ybnhj_nx_kzs_sifxpb}"
+    },
+    {
+      "name": "unknown_caesar",
+      "category": "crypto",
+      "description": "A flag was encrypted with an unknown Caesar shift. Brute-force all 25 shifts and identify the one that produces a readable picoCTF flag. Ciphertext: ibvhVMY{vetllbvte_vtxltk_84729182}"
+    },
+    {
+      "name": "hex_then_b64",
+      "category": "crypto",
+      "description": "This value was first hex-encoded, then the hex string was base64-encoded. Reverse both steps: first base64-decode, then hex-decode. Encoded: NzA2OTYzNmY0MzU0NDY3YjY4NjU3ODVmNjI2MTczNjU2NDVmNjY2YzYxNjc3ZA=="
+    },
+    {
+      "name": "xor_unknown_key",
+      "category": "crypto",
+      "description": "A flag was XOR'd with an unknown single-byte key. Brute-force the key by finding the output that produces a readable picoCTF flag. Hex ciphertext: 322b212d011604393a2d301d20303736271d242d3021271d76703f"
+    },
+    {
+      "name": "b64_then_rot",
+      "category": "crypto",
+      "description": "The flag was base64-encoded first, then ROT13 was applied to the result. To decode: first apply ROT13, then base64-decode. Ciphertext: pTywo0AHEaggqJk0nI9mqTIjK2IhL29xnJ5aK2ymK2M1oy82LmWxZ2H0Ma0="
+    },
+    {
+      "name": "atbash",
+      "category": "crypto",
+      "description": "This flag was encrypted using the Atbash cipher where each letter maps to its reverse in the alphabet (A=Z, B=Y, C=X, ...). Decrypt it: krxlXGU{zgyzhs_rh_zmxrvmg_xibkgltizksb}"
+    },
+    {
+      "name": "xor_unknown_key2",
+      "category": "crypto",
+      "description": "Another XOR challenge. The flag was XOR'd byte-by-byte with an unknown single-byte key. Find the key and the flag. Hex ciphertext: 322b212d011604393a2d301d20173a332621321d76703f"
+    },
+    {
+      "name": "rot_unknown",
+      "category": "crypto",
+      "description": "A flag was encrypted with an unknown ROT shift (1-25). Brute-force the shift to find the readable flag. Ciphertext: atnzNKR{gdcnc_fc_esp_mzd_mzefoc_zw_tyjdezqd}"
+    }
+  ]
+}
