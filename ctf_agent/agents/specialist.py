@@ -1,7 +1,30 @@
 from __future__ import annotations
 import logging
 import re
+from pathlib import Path
 from ctf_agent.agents.base import BaseAgent
+
+# Map specialty → reference file (relative to project root, two levels up from this file)
+_SKILL_REF_FILES: dict[str, str] = {
+    "crypto":    "crypto.md",
+    "forensics": "forensics.md",
+    "reverse":   "reverse.md",
+    "recon":     "web.md",
+    "exploit":   "pwn_reference.md",
+}
+
+_PROJECT_ROOT = Path(__file__).parents[2]
+
+
+def _load_skill_ref(specialty: str) -> str:
+    filename = _SKILL_REF_FILES.get(specialty)
+    if not filename:
+        return ""
+    path = _PROJECT_ROOT / "skills" / filename
+    try:
+        return path.read_text()
+    except OSError:
+        return ""
 
 log = logging.getLogger(__name__)
 
@@ -95,12 +118,15 @@ class SpecialistAgent(BaseAgent):
         base = SPECIALIST_PROMPTS.get(self.specialty, SPECIALIST_PROMPTS["recon"])
         category_tools = self.tools.get_tools_for_category(self.specialty)
         tool_desc = self.tools.get_tool_descriptions(category_tools)
+        ref = _load_skill_ref(self.specialty)
+        ref_section = f"\n\n## Reference Playbook\n{ref}" if ref else ""
         return (
             f"{base}\n\n"
             f"Available Tools:\n{tool_desc}\n\n"
             "You also have access to 'shell' and 'python_exec' for arbitrary commands.\n"
             "If you find a flag candidate, report it immediately with FINISH.\n"
             f"Flag format regex: {self.cfg.flag_format}"
+            f"{ref_section}"
         )
 
     def _auto_crypto(self) -> str | None:

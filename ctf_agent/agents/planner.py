@@ -2,34 +2,55 @@ from __future__ import annotations
 import json
 import logging
 import re
+from pathlib import Path
 
 from .base import BaseAgent
 from ..memory.scratchpad import ChallengeContext
 
+_PROJECT_ROOT = Path(__file__).parents[2]
+
+
+def _load_skill_md() -> str:
+    path = _PROJECT_ROOT / "skills" / "SKILL.md"
+    try:
+        content = path.read_text()
+        # strip frontmatter (--- ... ---) so only the body is used
+        if content.startswith("---"):
+            end = content.find("---", 3)
+            if end != -1:
+                content = content[end + 3:].lstrip()
+        return content
+    except OSError:
+        return ""
+
 log = logging.getLogger(__name__)
 
-_SYSTEM = """You are the Planner agent in a CTF-solving system. Your job is to:
+_SKILL_BODY = _load_skill_md()
+
+_SYSTEM = f"""You are the Planner agent in a CTF-solving system. Your job is to:
 1. Analyze the challenge description and identify the category (web, crypto, forensics, reverse, pwn, misc)
 2. Decompose the challenge into ordered subtasks
 3. Assign each subtask to a specialist agent or tool
 4. Maintain the overall strategy and adapt when subtasks fail
 
+{_SKILL_BODY}
+
 Respond with a JSON plan:
-{
+{{
   "category": "web|crypto|forensics|reverse|pwn|misc",
   "difficulty_estimate": "beginner|easy|medium|hard",
   "analysis": "brief analysis of the challenge",
   "plan": [
-    {
+    {{
       "step": 1,
       "description": "what to do",
       "agent": "recon|exploit|crypto|reverse|verifier",
       "tools": ["tool1", "tool2"],
       "depends_on": []
-    }
+    }}
   ],
   "initial_hypotheses": ["hypothesis 1", "hypothesis 2"]
-}"""
+}}"""
 
 
 class PlannerAgent(BaseAgent):
