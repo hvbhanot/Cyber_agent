@@ -3,7 +3,9 @@ import json
 import logging
 import re
 from typing import Optional
-import httpx
+from langchain_ollama import ChatOllama
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.output_parsers import JsonOutputParser
 from ctf_agent.config import Config
 
 log = logging.getLogger(__name__)
@@ -16,12 +18,11 @@ def _strip_think(text: str) -> str:
 
 
 def _extract_json(text: str) -> dict:
-    # try direct parse
+    text = _strip_think(text)
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    # strip markdown fences
     cleaned = text
     if "```" in cleaned:
         cleaned = re.sub(r"```(?:json)?", "", cleaned).strip()
@@ -29,7 +30,6 @@ def _extract_json(text: str) -> dict:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
-    # extract first {...} block
     start = cleaned.find("{")
     end = cleaned.rfind("}") + 1
     if start != -1 and end > start:
@@ -40,7 +40,24 @@ def _extract_json(text: str) -> dict:
 class LLMClient:
     def __init__(self, config: Config):
         self.cfg = config
-        self._client = httpx.Client(base_url=self.cfg.ollama_base_url, timeout=180)
+        self.model = ChatOllama(
+            model=self.cfg.llm_model,
+            base_url=self.cfg.ollama_base_url,
+            temperature=self.cfg.temperature,
+            num_predict=4096,
+        )
+        self._json_parser = JsonOutputParser()
+
+    def get_model(self, **overrides) -> ChatOllama:
+        if not overrides:
+            return self.model
+        kwargs = {
+            "model": self.cfg.llm_model,
+            "base_url": self.cfg.ollama_base_url,
+            "temperature": overrides.get("temperature", self.cfg.temperature),
+            "num_predict": overrides.get("max_tokens", 4096),
+        }
+        return ChatOllama(**kwargs)
 
     def chat(
         self,
@@ -49,16 +66,20 @@ class LLMClient:
         temperature: Optional[float] = None,
         max_tokens: int = 4096,
     ) -> str:
-        temp = temperature if temperature is not None else self.cfg.temperature
-        payload = {
-            "model": self.cfg.llm_model,
-            "messages": [{"role": "system", "content": system}] + messages,
-            "stream": False,
-            "options": {"temperature": temp, "num_predict": max_tokens},
-        }
-        resp = self._client.post("/api/chat", json=payload)
-        resp.raise_for_status()
-        return resp.json()["message"]["content"]
+        model = self.model
+        if temperature is not None and temperature != self.cfg.temperature:
+            model = self.get_model(temperature=temperature, max_tokens=max_tokens)
+
+        lc_messages = [SystemMessage(content=system)]
+        for m in messages:
+            if m["role"] == "user":
+                lc_messages.append(HumanMessage(content=m["content"]))
+            else:
+                from langchain_core.messages import AIMessage
+                lc_messages.append(AIMessage(content=m["content"]))
+
+        response = model.invoke(lc_messages)
+        return _strip_think(response.content)
 
     def structured_chat(
         self,
@@ -73,25 +94,33 @@ class LLMClient:
             f"{schema_hint}"
         )
 
-        # first attempt — with json format enforced
-        payload = {
-            "model": self.cfg.llm_model,
-            "messages": [{"role": "system", "content": augmented_system}] + messages,
-            "stream": False,
-            "format": "json",
-            "options": {"temperature": self.cfg.temperature, "num_predict": 4096},
-        }
-        resp = self._client.post("/api/chat", json=payload)
-        resp.raise_for_status()
-        raw = _strip_think(resp.json()["message"]["content"])
+        # first attempt — use format="json" via model config
+        json_model = ChatOllama(
+            model=self.cfg.llm_model,
+            base_url=self.cfg.ollama_base_url,
+            temperature=self.cfg.temperature,
+            num_predict=4096,
+            format="json",
+        )
+
+        lc_messages = [SystemMessage(content=augmented_system)]
+        for m in messages:
+            if m["role"] == "user":
+                lc_messages.append(HumanMessage(content=m["content"]))
+            else:
+                from langchain_core.messages import AIMessage
+                lc_messages.append(AIMessage(content=m["content"]))
+
+        response = json_model.invoke(lc_messages)
+        raw = _strip_think(response.content)
 
         try:
             return _extract_json(raw)
         except (ValueError, json.JSONDecodeError):
             log.warning("LLM returned non-JSON, retrying without format constraint")
 
-        # retry without format: json (some models ignore it)
-        raw2 = _strip_think(self.chat(augmented_system, messages))
+        # retry without format: json
+        raw2 = self.chat(augmented_system, messages)
         try:
             return _extract_json(raw2)
         except (ValueError, json.JSONDecodeError):

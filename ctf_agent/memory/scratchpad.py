@@ -67,7 +67,7 @@ class Scratchpad:
 
     def record_tool_result(self, step: ReActStep, result: ToolResult):
         step.tool_results.append(result)
-        step.observation = result.stdout[:2000] if result.stdout else result.stderr[:2000]
+        step.observation = result.stdout[:4000] if result.stdout else result.stderr[:2000]
 
     def add_finding(self, key: str, value: Any):
         self.findings[key] = value
@@ -89,7 +89,7 @@ class Scratchpad:
     def add_error(self, error: str):
         self.errors.append(error)
 
-    def get_context_window(self, max_steps: int = 5) -> str:
+    def get_context_window(self, max_steps: int = 10) -> str:
         parts = []
         if self.challenge:
             parts.append(
@@ -104,6 +104,18 @@ class Scratchpad:
             parts.append("## Plan\n" + "\n".join(f"  {i+1}. {s}" for i, s in enumerate(self.plan)))
         if self.findings:
             parts.append("## Findings\n" + json.dumps(self.findings, indent=2, default=str))
+
+        # Summarize older steps so early findings aren't lost
+        if len(self.steps) > max_steps:
+            older = self.steps[:-max_steps]
+            summary_lines = []
+            for s in older:
+                obs_snippet = (s.observation or "")[:120]
+                summary_lines.append(
+                    f"  Step {s.step_id}: {s.action or 'think'} → {obs_snippet}"
+                )
+            parts.append("## Earlier Steps (summary)\n" + "\n".join(summary_lines))
+
         recent = self.steps[-max_steps:]
         if recent:
             step_lines = []
@@ -112,7 +124,7 @@ class Scratchpad:
                     f"### Step {s.step_id}\n"
                     f"Thought: {s.thought}\n"
                     f"Action: {s.action or 'None'}\n"
-                    f"Observation: {(s.observation or 'None')[:500]}"
+                    f"Observation: {(s.observation or 'None')[:2000]}"
                 )
             parts.append("## Recent Steps\n" + "\n".join(step_lines))
         if self.runtime_hints:

@@ -2,9 +2,9 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
+from langchain_core.tools import StructuredTool
 from ctf_agent.agents.base import BaseAgent
 
-# Map specialty → reference file (relative to project root, two levels up from this file)
 _SKILL_REF_FILES: dict[str, str] = {
     "crypto":    "crypto.md",
     "forensics": "forensics.md",
@@ -52,12 +52,12 @@ The pre-analysis results above already show what each tool returned for the chal
 Your job is to:
 1. Read the pre-analysis results carefully
 2. Identify which result looks like a decoded flag or readable text
-3. If a result contains picoCTF{{...}} or flag{{...}}, report it immediately with FINISH
+3. If a result contains picoCTF{{...}} or flag{{...}}, report it immediately with Final Answer
 4. If no clear flag was found, try ONE additional tool with the exact ciphertext from the challenge
 5. Do NOT invent or modify the ciphertext — use it exactly as shown in the challenge description
 
 Available tools: crypto_analysis (method=multi|caesar|vigenere|xor|freq), rot13, base64_decode, hex_decode, hash_identify
-IMPORTANT: When you find the answer, set action=FINISH and put the answer in the answer field.""",
+IMPORTANT: When you find the answer, provide the Final Answer.""",
 
     "reverse": """You are the Reverse Engineering Specialist Agent. Your job is to analyze binaries.
 Key techniques:
@@ -79,16 +79,14 @@ Key techniques:
 - Strings with grep for flag format""",
 }
 
-# Patterns to extract candidate ciphertexts from a challenge description
 _CANDIDATE_PATTERNS = [
-    re.compile(r"[A-Za-z0-9+/]{20,}={0,2}"),   # base64-like
-    re.compile(r"[0-9a-fA-F]{16,}"),             # hex-like
-    re.compile(r"\S+\{[^}]{4,}\}"),              # flag-shaped (encoded prefix + braces)
+    re.compile(r"[A-Za-z0-9+/]{20,}={0,2}"),
+    re.compile(r"[0-9a-fA-F]{16,}"),
+    re.compile(r"\S+\{[^}]{4,}\}"),
 ]
 
 
 def _extract_candidates(description: str) -> list[str]:
-    """Pull out strings that are likely the encoded/ciphered payload."""
     seen = set()
     results = []
     for pat in _CANDIDATE_PATTERNS:
@@ -97,8 +95,6 @@ def _extract_candidates(description: str) -> list[str]:
             if s not in seen and len(s) >= 8:
                 seen.add(s)
                 results.append(s)
-    # also try the whole description stripped of the human-readable prefix
-    # (e.g. "Decode this: <ciphertext>" → take everything after the colon)
     colon_split = re.split(r"[:\?]\s+", description)
     if len(colon_split) > 1:
         tail = colon_split[-1].strip()
@@ -124,17 +120,16 @@ class SpecialistAgent(BaseAgent):
             f"{base}\n\n"
             f"Available Tools:\n{tool_desc}\n\n"
             "You also have access to 'shell' and 'python_exec' for arbitrary commands.\n"
-            "If you find a flag candidate, report it immediately with FINISH.\n"
+            "If you find a flag candidate, report it immediately as your Final Answer.\n"
             f"Flag format regex: {self.cfg.flag_format}"
             f"{ref_section}"
         )
 
+    def _get_langchain_tools(self) -> list[StructuredTool]:
+        """Return category-specific LangChain tools."""
+        return self.tools.get_langchain_tools(category=self.specialty, include_general=True)
+
     def _auto_crypto(self) -> str | None:
-        """
-        For crypto challenges: extract candidate strings from the description,
-        run crypto_analysis multi on each, scan for flags.
-        Returns the flag/answer if found, else None.
-        """
         if not self.pad.challenge:
             return None
 
@@ -154,40 +149,34 @@ class SpecialistAgent(BaseAgent):
             output = result.stdout.strip()
             pre_results.append(f"Input: {candidate[:80]}\nResult:\n{output}")
 
-            # scan for flag patterns
-            import re as _re
-            flags = _re.findall(self.cfg.flag_format, output)
+            flags = re.findall(self.cfg.flag_format, output)
             for f in flags:
                 self.pad.add_flag_candidate(f)
                 log.info(f"[auto_crypto] Flag found: {f}")
                 return f
 
-            # also try explicit rot13
             if rot_tool:
                 rot_result = rot_tool.execute(data=candidate)
                 rot_out = rot_result.stdout.strip()
-                rot_flags = _re.findall(self.cfg.flag_format, rot_out)
+                rot_flags = re.findall(self.cfg.flag_format, rot_out)
                 for f in rot_flags:
                     self.pad.add_flag_candidate(f)
                     log.info(f"[auto_crypto] ROT13 flag found: {f}")
                     return f
                 pre_results.append(f"ROT13({candidate[:40]}): {rot_out[:100]}")
 
-        # store pre-analysis in findings so the LLM can see it
         self.pad.add_finding("pre_analysis", "\n\n".join(pre_results)[:2000])
         return None
 
     def execute_subtask(self, subtask: str) -> str:
         log.info(f"[Specialist:{self.specialty}] Executing: {subtask}")
 
-        # for crypto: run tools directly first before involving the LLM
         if self.specialty == "crypto":
             found = self._auto_crypto()
             if found:
                 self.pad.set_answer(found)
                 return f"FLAG/ANSWER: {found}"
 
-        # build task prompt with full challenge context
         task = subtask
         if self.pad.challenge:
             ch = self.pad.challenge

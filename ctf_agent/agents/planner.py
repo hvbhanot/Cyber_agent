@@ -1,8 +1,10 @@
 from __future__ import annotations
 import json
 import logging
-import re
 from pathlib import Path
+
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.output_parsers import JsonOutputParser
 
 from .base import BaseAgent
 from ..memory.scratchpad import ChallengeContext
@@ -14,7 +16,6 @@ def _load_skill_md() -> str:
     path = _PROJECT_ROOT / "skills" / "SKILL.md"
     try:
         content = path.read_text()
-        # strip frontmatter (--- ... ---) so only the body is used
         if content.startswith("---"):
             end = content.find("---", 3)
             if end != -1:
@@ -22,6 +23,7 @@ def _load_skill_md() -> str:
         return content
     except OSError:
         return ""
+
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +54,8 @@ Respond with a JSON plan:
   "initial_hypotheses": ["hypothesis 1", "hypothesis 2"]
 }}"""
 
+_JSON_PARSER = JsonOutputParser()
+
 
 class PlannerAgent(BaseAgent):
     name = "planner"
@@ -59,6 +63,23 @@ class PlannerAgent(BaseAgent):
 
     def system_prompt(self) -> str:
         return _SYSTEM
+
+    def _invoke_plan_chain(self, user_content: str) -> dict | None:
+        """Invoke model with system + user messages, parse JSON output."""
+        model = self.llm.get_model()
+        messages = [
+            SystemMessage(content=_SYSTEM),
+            HumanMessage(content=user_content),
+        ]
+        try:
+            response = model.invoke(messages)
+            return _JSON_PARSER.parse(response.content)
+        except Exception as e:
+            log.warning(f"Plan chain failed ({e}), trying structured_chat fallback")
+            try:
+                return self.llm.structured_chat(_SYSTEM, [{"role": "user", "content": user_content}])
+            except Exception:
+                return None
 
     def create_plan(self, challenge: ChallengeContext) -> list[str]:
         prompt = f"## CTF Challenge\nName: {challenge.name}\nCategory: {challenge.category}\nDescription: {challenge.description}"
@@ -69,8 +90,8 @@ class PlannerAgent(BaseAgent):
         if challenge.hints:
             prompt += f"\nHints: {challenge.hints}"
 
-        response = self.llm.chat(_SYSTEM, [{"role": "user", "content": prompt}])
-        plan = self._parse_plan(response)
+        plan = self._invoke_plan_chain(prompt)
+
         if not plan:
             log.warning("Failed to parse plan, using fallback")
             plan = self._fallback_plan(f"{challenge.category} {challenge.description}")
@@ -81,35 +102,20 @@ class PlannerAgent(BaseAgent):
 
     def replan(self, feedback: str) -> list[str]:
         prior = json.dumps({"plan": self.pad.plan}, indent=2)
-        prompt = (
+        user_content = (
             f"## Prior Plan\n{prior}\n\n"
             f"## Feedback\n{feedback}\n\n"
             "Generate a revised plan addressing the feedback. Same JSON format."
         )
-        response = self.llm.chat(_SYSTEM, [{"role": "user", "content": prompt}])
-        plan = self._parse_plan(response)
+
+        plan = self._invoke_plan_chain(user_content)
+
         if not plan:
             plan = self._fallback_plan(feedback)
+
         subtasks = [s["description"] for s in plan.get("plan", [])]
         self.pad.set_plan(subtasks)
         return subtasks
-
-    def _parse_plan(self, text: str) -> dict | None:
-        # strip <think>...</think> blocks (deepseek-r1 style)
-        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-        json_match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass
-        brace_match = re.search(r"\{.*\}", text, re.DOTALL)
-        if brace_match:
-            try:
-                return json.loads(brace_match.group(0))
-            except json.JSONDecodeError:
-                pass
-        return None
 
     def _fallback_plan(self, task: str) -> dict:
         tl = task.lower()

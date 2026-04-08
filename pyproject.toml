@@ -12,7 +12,10 @@ license = {text = "MIT"}
 authors = [{name = "Harsh Bhanot"}]
 
 dependencies = [
-    "httpx>=0.25.0",
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-ollama>=0.3.0",
+    "langgraph>=1.0.0",
     "pwntools>=4.12.0",
 ]
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 from typing import Optional
+from langchain_core.tools import StructuredTool
 from ctf_agent.tools.base import BaseTool, ShellTool, PythonExecTool
 from ctf_agent.tools.recon import RECON_TOOLS
 from ctf_agent.tools.exploit import EXPLOIT_TOOLS
@@ -56,7 +57,7 @@ class ToolRegistry:
     def get_tools_for_category(self, category: str) -> list[str]:
         mapping = {
             "web": ["nmap", "gobuster", "curl", "whatweb", "dirb", "sqlmap", "curl_exploit"],
-            "crypto": ["base64_decode", "hex_decode", "crypto_analysis", "hash_identify"],
+            "crypto": ["base64_decode", "hex_decode", "rot13", "crypto_analysis", "hash_identify"],
             "forensics": ["exiftool", "binwalk", "steghide", "foremost", "zsteg", "strings", "file", "hexdump"],
             "reverse": ["strings", "file", "objdump", "readelf", "hexdump"],
             "pwn": ["pwntools_exec", "netcat", "strings", "objdump", "readelf"],
@@ -78,3 +79,24 @@ class ToolRegistry:
                 f"  Available: {avail}"
             )
         return "\n".join(lines)
+
+    def get_langchain_tools(
+        self, category: Optional[str] = None, include_general: bool = True,
+    ) -> list[StructuredTool]:
+        """Return LangChain StructuredTool instances for a category (or all)."""
+        if category:
+            names = self.get_tools_for_category(category)
+        else:
+            names = list(self._tools.keys())
+
+        if include_general:
+            for n in ("shell", "python_exec"):
+                if n not in names:
+                    names.append(n)
+
+        lc_tools = []
+        for name in names:
+            tool = self._tools.get(name)
+            if tool and tool.is_available():
+                lc_tools.append(tool.as_langchain_tool())
+        return lc_tools

@@ -1,6 +1,11 @@
 from __future__ import annotations
 import logging
+import os
+import shutil
+import subprocess
 import time
+import urllib.parse
+from pathlib import Path
 from typing import Optional
 from ctf_agent.config import Config
 from ctf_agent.utils.llm import LLMClient
@@ -33,6 +38,8 @@ class Orchestrator:
     def solve(self, challenge: ChallengeContext, max_replans: int = 2) -> ChallengeMetrics:
         start = time.time()
         self.pad.reset()
+        self.pad.set_challenge(challenge)
+        self._download_challenge_files(challenge)
         log.info(f"=== Solving: {challenge.name} ({challenge.category}) ===")
 
         planner = PlannerAgent(self.cfg, self.llm, self.pad, self.tools)
@@ -92,6 +99,40 @@ class Orchestrator:
         log.info(f"=== Result: {'SOLVED' if metrics.solved else 'UNSOLVED'} "
                  f"in {metrics.wall_time_s}s, {metrics.total_tool_calls} tool calls ===")
         return metrics
+
+    def _download_challenge_files(self, challenge: ChallengeContext):
+        """Download challenge files (URLs) into the workspace directory."""
+        if not challenge.files:
+            return
+        downloaded = []
+        for filepath in challenge.files:
+            if filepath.startswith(("http://", "https://")):
+                filename = os.path.basename(urllib.parse.urlparse(filepath).path) or "download"
+                dest = os.path.join(self.cfg.workspace_dir, filename)
+                try:
+                    subprocess.run(
+                        ["curl", "-sL", "-o", dest, "--max-time", "30", filepath],
+                        capture_output=True, text=True, timeout=35,
+                    )
+                    if os.path.exists(dest) and os.path.getsize(dest) > 0:
+                        downloaded.append(dest)
+                        log.info(f"Downloaded {filepath} -> {dest}")
+                    else:
+                        log.warning(f"Download produced empty file: {filepath}")
+                except Exception as e:
+                    log.warning(f"Failed to download {filepath}: {e}")
+            elif os.path.isfile(filepath):
+                dest = os.path.join(self.cfg.workspace_dir, os.path.basename(filepath))
+                if os.path.abspath(filepath) != os.path.abspath(dest):
+                    shutil.copy2(filepath, dest)
+                    downloaded.append(dest)
+                    log.info(f"Copied {filepath} -> {dest}")
+                else:
+                    downloaded.append(dest)
+
+        if downloaded:
+            challenge.files = downloaded
+            self.pad.add_finding("downloaded_files", downloaded)
 
     def solve_batch(self, challenges: list[ChallengeContext]) -> list[ChallengeMetrics]:
         results = []
