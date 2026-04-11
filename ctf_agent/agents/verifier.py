@@ -1,13 +1,38 @@
 from __future__ import annotations
 import re
 import logging
+from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.output_parsers import JsonOutputParser
 from ctf_agent.agents.base import BaseAgent
 
 log = logging.getLogger(__name__)
 
-_VERIFY_SYSTEM = """You are the Verifier Agent. Your job is to validate flag candidates and reduce hallucinations.
+_PROJECT_ROOT = Path(__file__).parents[2]
+
+
+def _load_skill_methodology() -> str:
+    path = _PROJECT_ROOT / "skills" / "SKILL.md"
+    try:
+        content = path.read_text()
+        # Strip frontmatter
+        if content.startswith("---"):
+            end = content.find("---", 3)
+            if end != -1:
+                content = content[end + 3:].lstrip()
+        # Extract just the validation section if present
+        for header in ["## Solving Workflow", "### Step 4: Validate"]:
+            idx = content.find(header)
+            if idx != -1 and "Validate" in header:
+                return content[idx:idx + 800]
+        return content[:1500]
+    except OSError:
+        return ""
+
+
+_SKILL_VALIDATION = _load_skill_methodology()
+
+_VERIFY_SYSTEM = f"""You are the Verifier Agent. Your job is to validate flag candidates and reduce hallucinations.
 
 Verification steps:
 1. FORMAT CHECK: Does the candidate match the expected flag format?
@@ -20,8 +45,11 @@ You must be skeptical. Common hallucination patterns:
 - Flags that look plausible but weren't in any tool output
 - "Guessed" flags based on challenge name/description
 - Flags from previous challenges bleeding into current context
+- Flags that are "too perfect" — real CTF flags often have underscores, numbers, or l33tspeak
 
-Output JSON: {"valid": true/false, "flag": "...", "confidence": 0.0-1.0, "reasoning": "...", "issues": [...]}"""
+{_SKILL_VALIDATION}
+
+Output JSON: {{"valid": true/false, "flag": "...", "confidence": 0.0-1.0, "reasoning": "...", "issues": [...]}}"""
 
 _JSON_PARSER = JsonOutputParser()
 
@@ -62,6 +90,7 @@ class VerifierAgent(BaseAgent):
 
             try:
                 response = model.invoke(messages)
+                self.llm.tokens.record(response)
                 result = _JSON_PARSER.parse(response.content)
             except Exception as e:
                 log.warning(f"Verification chain failed ({e}), falling back to structured_chat")
@@ -110,6 +139,7 @@ class VerifierAgent(BaseAgent):
 
         try:
             response = model.invoke(messages)
+            self.llm.tokens.record(response)
             return _JSON_PARSER.parse(response.content)
         except Exception as e:
             log.warning(f"Reflection chain failed ({e}), falling back to structured_chat")

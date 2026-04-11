@@ -73,6 +73,7 @@ class PlannerAgent(BaseAgent):
         ]
         try:
             response = model.invoke(messages)
+            self.llm.tokens.record(response)
             return _JSON_PARSER.parse(response.content)
         except Exception as e:
             log.warning(f"Plan chain failed ({e}), trying structured_chat fallback")

@@ -52,22 +52,37 @@ class Scratchpad:
         self.runtime_hints: list[str] = []
         self.human_hints_used: int = 0
         self._step_counter = 0
+        self._on_progress: Optional[Any] = None  # callback: (event, detail) -> None
+
+    def set_progress_callback(self, callback):
+        self._on_progress = callback
+
+    def _emit(self, event: str, detail: str = ""):
+        if self._on_progress:
+            try:
+                self._on_progress(event, detail)
+            except Exception:
+                pass
 
     def set_challenge(self, ctx: ChallengeContext):
         self.challenge = ctx
 
     def set_plan(self, subtasks: list[str]):
         self.plan = subtasks
+        self._emit("plan", f"{len(subtasks)} steps")
 
     def new_step(self, thought: str) -> ReActStep:
         self._step_counter += 1
         step = ReActStep(step_id=self._step_counter, thought=thought)
         self.steps.append(step)
+        self._emit("step", thought[:80])
         return step
 
     def record_tool_result(self, step: ReActStep, result: ToolResult):
         step.tool_results.append(result)
         step.observation = result.stdout[:4000] if result.stdout else result.stderr[:2000]
+        status = "ok" if result.exit_code == 0 else "error"
+        self._emit("tool_result", f"{result.tool_name} [{status}]")
 
     def add_finding(self, key: str, value: Any):
         self.findings[key] = value
@@ -75,9 +90,11 @@ class Scratchpad:
     def add_flag_candidate(self, candidate: str):
         if candidate not in self.flag_candidates:
             self.flag_candidates.append(candidate)
+            self._emit("flag_candidate", candidate)
 
     def set_validated_flag(self, flag: str):
         self.validated_flag = flag
+        self._emit("flag_validated", flag)
 
     def set_answer(self, answer: str):
         self.answer = answer
@@ -88,6 +105,7 @@ class Scratchpad:
 
     def add_error(self, error: str):
         self.errors.append(error)
+        self._emit("error", error[:80])
 
     def get_context_window(self, max_steps: int = 10) -> str:
         parts = []

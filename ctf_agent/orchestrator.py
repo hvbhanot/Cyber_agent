@@ -45,6 +45,7 @@ class Orchestrator:
         planner = PlannerAgent(self.cfg, self.llm, self.pad, self.tools)
         verifier = VerifierAgent(self.cfg, self.llm, self.pad, self.tools)
 
+        self.pad._emit("phase", "Planning")
         subtasks = planner.create_plan(challenge)
         log.info(f"Plan ({len(subtasks)} steps): {subtasks}")
 
@@ -57,6 +58,7 @@ class Orchestrator:
             last_result = ""
             for i, subtask in enumerate(subtasks):
                 log.info(f"--- Subtask {i+1}/{len(subtasks)}: {subtask} ---")
+                self.pad._emit("subtask", f"[{i+1}/{len(subtasks)}] {subtask[:60]}")
                 result = specialist.execute_subtask(subtask)
                 last_result = result
                 log.info(f"Subtask result: {result[:200]}")
@@ -64,6 +66,7 @@ class Orchestrator:
                 if self.pad.validated_flag:
                     break
                 if self.pad.flag_candidates:
+                    self.pad._emit("phase", "Verifying flag candidates")
                     verification = verifier.verify_candidates()
                     if verification.get("valid"):
                         break
@@ -81,6 +84,7 @@ class Orchestrator:
                     break
 
             if replan_attempt < max_replans:
+                self.pad._emit("phase", "Reflecting")
                 reflection = verifier.self_reflect()
                 confidence = reflection.get("confidence_in_approach", 0.5)
                 suggestions = reflection.get("suggestions", [])
@@ -88,6 +92,7 @@ class Orchestrator:
 
                 if confidence < 0.5 and suggestions:
                     log.info("[Orchestrator] Replanning...")
+                    self.pad._emit("phase", f"Replanning (attempt {replan_attempt + 1})")
                     subtasks = planner.replan(
                         f"Low confidence ({confidence}). Suggestions: {suggestions}"
                     )
@@ -95,7 +100,7 @@ class Orchestrator:
                     break
 
         self.pad.save()
-        metrics = extract_metrics(self.pad, start)
+        metrics = extract_metrics(self.pad, start, token_snapshot=self.llm.tokens.snapshot())
         log.info(f"=== Result: {'SOLVED' if metrics.solved else 'UNSOLVED'} "
                  f"in {metrics.wall_time_s}s, {metrics.total_tool_calls} tool calls ===")
         return metrics

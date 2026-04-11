@@ -23,6 +23,10 @@ class ChallengeMetrics:
     end_time: float = 0.0
     wall_time_s: float = 0.0
     replans: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    llm_calls: int = 0
 
     @property
     def solve_rate(self) -> float:
@@ -106,11 +110,12 @@ class BenchmarkResults:
         ))
 
 
-def extract_metrics(pad: Scratchpad, start_time: float) -> ChallengeMetrics:
+def extract_metrics(pad: Scratchpad, start_time: float, token_snapshot: dict | None = None) -> ChallengeMetrics:
     end = time.time()
     total_tool_calls = sum(len(s.tool_results) for s in pad.steps)
     valid = 1 if pad.validated_flag else 0
     hallucinated = len(pad.flag_candidates) - valid
+    ts = token_snapshot or {}
 
     return ChallengeMetrics(
         name=pad.challenge.name if pad.challenge else "unknown",
@@ -127,4 +132,8 @@ def extract_metrics(pad: Scratchpad, start_time: float) -> ChallengeMetrics:
         start_time=start_time,
         end_time=end,
         wall_time_s=round(end - start_time, 2),
+        prompt_tokens=ts.get("prompt_tokens", 0),
+        completion_tokens=ts.get("completion_tokens", 0),
+        total_tokens=ts.get("total_tokens", 0),
+        llm_calls=ts.get("llm_calls", 0),
     )

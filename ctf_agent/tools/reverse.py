@@ -62,4 +62,59 @@ class HexdumpTool(BaseTool):
         return ["xxd", "-l", str(length), filepath]
 
 
-REVERSE_TOOLS = [StringsTool, FileTool, ObjdumpTool, ReadelfTool, HexdumpTool]
+class LtraceTool(BaseTool):
+    spec = ToolSpec(
+        name="ltrace",
+        description="Trace library calls — shows strcmp, printf, malloc args (reveals passwords, keys)",
+        parameters={"filepath": "str", "args": "str (optional — arguments to pass to the binary)"},
+        binary="ltrace",
+    )
+
+    def build_command(self, filepath: str = "", args: str = "", **kw) -> list[str]:
+        cmd = ["ltrace", "-s", "200", filepath]
+        if args:
+            cmd += args.split()
+        return cmd
+
+
+class StraceTool(BaseTool):
+    spec = ToolSpec(
+        name="strace",
+        description="Trace system calls — shows file access, network, reads/writes",
+        parameters={"filepath": "str", "args": "str (optional — arguments to pass to the binary)"},
+        binary="strace",
+    )
+
+    def build_command(self, filepath: str = "", args: str = "", **kw) -> list[str]:
+        cmd = ["strace", "-f", "-s", "200", filepath]
+        if args:
+            cmd += args.split()
+        return cmd
+
+
+class Radare2Tool(BaseTool):
+    spec = ToolSpec(
+        name="radare2",
+        description="Reverse engineering framework — disassemble, analyze control flow, find functions",
+        parameters={"filepath": "str", "commands": "str — r2 commands separated by ;"},
+        binary="r2",
+    )
+
+    def build_command(self, filepath: str = "", commands: str = "aaa;afl;pdf @main", **kw) -> list[str]:
+        return ["r2", "-q", "-c", commands, filepath]
+
+
+class UncompyleTool(BaseTool):
+    spec = ToolSpec(
+        name="uncompyle6",
+        description="Decompile Python .pyc bytecode back to source code",
+        parameters={"filepath": "str"},
+        binary="uncompyle6",
+    )
+
+    def build_command(self, filepath: str = "", **kw) -> list[str]:
+        return ["uncompyle6", filepath]
+
+
+REVERSE_TOOLS = [StringsTool, FileTool, ObjdumpTool, ReadelfTool, HexdumpTool,
+                 LtraceTool, StraceTool, Radare2Tool, UncompyleTool]

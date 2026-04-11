@@ -70,4 +70,50 @@ class DirbTool(BaseTool):
         return ["dirb", url, wordlist, "-S"]
 
 
-RECON_TOOLS = [NmapTool, GobusterTool, CurlTool, WhatWebTool, DirbTool]
+class NiktoTool(BaseTool):
+    spec = ToolSpec(
+        name="nikto",
+        description="Web server vulnerability scanner — finds misconfigs, default files, known vulns",
+        parameters={"url": "str", "flags": "str (optional)"},
+        binary="nikto",
+    )
+
+    def build_command(self, url: str = "", flags: str = "-nointeractive", **kw) -> list[str]:
+        return ["nikto", "-h", url] + flags.split()
+
+
+class FfufTool(BaseTool):
+    spec = ToolSpec(
+        name="ffuf",
+        description="Fast web fuzzer — directory, parameter, vhost, and header fuzzing",
+        parameters={
+            "url": "str — use FUZZ as placeholder (e.g. http://target/FUZZ)",
+            "wordlist": "str (optional)",
+            "flags": "str (optional)",
+        },
+        binary="ffuf",
+    )
+
+    def build_command(
+        self, url: str = "", wordlist: str = "/usr/share/wordlists/dirb/common.txt",
+        flags: str = "", **kw,
+    ) -> list[str]:
+        cmd = ["ffuf", "-u", url, "-w", wordlist, "-mc", "200,301,302,403"]
+        if flags:
+            cmd += flags.split()
+        return cmd
+
+
+class SslscanTool(BaseTool):
+    spec = ToolSpec(
+        name="sslscan",
+        description="Scan SSL/TLS configuration — ciphers, certs, vulnerabilities",
+        parameters={"target": "str — host:port"},
+        binary="sslscan",
+    )
+
+    def build_command(self, target: str = "", **kw) -> list[str]:
+        return ["sslscan", "--no-colour", target]
+
+
+RECON_TOOLS = [NmapTool, GobusterTool, CurlTool, WhatWebTool, DirbTool, NiktoTool, FfufTool, SslscanTool]

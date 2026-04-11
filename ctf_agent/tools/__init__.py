@@ -56,12 +56,19 @@ class ToolRegistry:
 
     def get_tools_for_category(self, category: str) -> list[str]:
         mapping = {
-            "web": ["nmap", "gobuster", "curl", "whatweb", "dirb", "sqlmap", "curl_exploit"],
-            "crypto": ["base64_decode", "hex_decode", "rot13", "crypto_analysis", "hash_identify"],
-            "forensics": ["exiftool", "binwalk", "steghide", "foremost", "zsteg", "strings", "file", "hexdump"],
-            "reverse": ["strings", "file", "objdump", "readelf", "hexdump"],
-            "pwn": ["pwntools_exec", "netcat", "strings", "objdump", "readelf"],
-            "misc": ["shell", "python_exec", "file", "strings", "base64_decode"],
+            "web": ["nmap", "gobuster", "curl", "whatweb", "dirb", "nikto", "ffuf",
+                     "sslscan", "sqlmap", "curl_exploit", "hydra"],
+            "crypto": ["base64_decode", "hex_decode", "rot13", "crypto_analysis",
+                        "hash_identify", "multi_decode", "openssl", "john", "hashcat"],
+            "forensics": ["exiftool", "binwalk", "steghide", "foremost", "zsteg",
+                           "strings", "file", "hexdump", "pdftotext", "tesseract",
+                           "volatility", "dd_extract"],
+            "reverse": ["strings", "file", "objdump", "readelf", "hexdump",
+                         "ltrace", "strace", "radare2", "uncompyle6"],
+            "pwn": ["pwntools_exec", "netcat", "strings", "objdump", "readelf",
+                     "checksec", "ropper", "gdb_script", "ltrace", "strace"],
+            "misc": ["shell", "python_exec", "file", "strings", "base64_decode",
+                      "hex_decode", "curl"],
         }
         tool_names = mapping.get(category, ["shell", "python_exec"])
         return [n for n in tool_names if n in self._tools]

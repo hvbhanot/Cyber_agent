@@ -1,5 +1,6 @@
 from __future__ import annotations
 import base64 as _b64
+from pathlib import Path
 from ctf_agent.tools.base import BaseTool, ToolSpec, PythonExecTool
 
 
@@ -284,10 +285,94 @@ class HashIdentifyTool(PythonExecTool):
         return ["python3", "-c", code]
 
 
+class MultiDecodeTool(BaseTool):
+    spec = ToolSpec(
+        name="multi_decode",
+        description=(
+            "Try ALL common decodings on input at once: ROT13, Atbash, all 26 Caesar shifts, "
+            "base64, hex, XOR brute-force, decimal ASCII, binary, and chained combos "
+            "(base64->hex, hex->base64, ROT13->base64). Reports any flag-pattern matches."
+        ),
+        parameters={"ciphertext": "str — the encoded text to decode"},
+        binary="python3",
+    )
+
+    def build_command(self, ciphertext: str = "", **kw) -> list[str]:
+        err = _require(ciphertext, "multi_decode", "ciphertext")
+        if err:
+            return err
+        script_path = str(Path(__file__).parents[1].parent / "skills" / "ctf_multi_decode.py")
+        enc = _safe(ciphertext)
+        # Decode the base64-wrapped ciphertext and pass it as argument
+        code = (
+            f"import base64, subprocess, sys\n"
+            f"ct = base64.b64decode('{enc}').decode()\n"
+            f"subprocess.run([sys.executable, '{script_path}', ct])\n"
+        )
+        return ["python3", "-c", code]
+
+
+class OpensslTool(BaseTool):
+    spec = ToolSpec(
+        name="openssl",
+        description=(
+            "OpenSSL crypto toolkit — decrypt ciphers, inspect certs, compute hashes. "
+            "Examples: 'enc -d -aes-256-cbc -in file -pass pass:key', "
+            "'x509 -in cert.pem -text', 'dgst -sha256 file'"
+        ),
+        parameters={"flags": "str — full openssl subcommand and flags"},
+        binary="openssl",
+    )
+
+    def build_command(self, flags: str = "", **kw) -> list[str]:
+        return ["openssl"] + flags.split()
+
+
+class JohnTool(BaseTool):
+    spec = ToolSpec(
+        name="john",
+        description="John the Ripper — crack password hashes (MD5, SHA, bcrypt, etc.)",
+        parameters={"hashfile": "str — path to file containing hashes", "flags": "str (optional)"},
+        binary="john",
+    )
+
+    def build_command(self, hashfile: str = "", flags: str = "", **kw) -> list[str]:
+        cmd = ["john"]
+        if flags:
+            cmd += flags.split()
+        cmd.append(hashfile)
+        return cmd
+
+
+class HashcatTool(BaseTool):
+    spec = ToolSpec(
+        name="hashcat",
+        description="GPU-accelerated hash cracker — supports 300+ hash types",
+        parameters={
+            "hashfile": "str — path to hash file",
+            "mode": "str — hash type (0=MD5, 100=SHA1, 1400=SHA256, 1800=SHA512crypt, 3200=bcrypt)",
+            "wordlist": "str (optional)",
+            "flags": "str (optional)",
+        },
+        binary="hashcat",
+    )
+
+    def build_command(
+        self, hashfile: str = "", mode: str = "0",
+        wordlist: str = "/usr/share/wordlists/rockyou.txt", flags: str = "--force", **kw,
+    ) -> list[str]:
+        cmd = ["hashcat", "-m", mode, hashfile, wordlist] + flags.split()
+        return cmd
+
+
 CRYPTO_TOOLS = [
     Base64DecodeTool,
     HexDecodeTool,
     Rot13Tool,
     CryptoAnalysisTool,
     HashIdentifyTool,
+    MultiDecodeTool,
+    OpensslTool,
+    JohnTool,
+    HashcatTool,
 ]

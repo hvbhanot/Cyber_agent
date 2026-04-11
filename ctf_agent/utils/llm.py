@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from typing import Optional
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -37,6 +38,56 @@ def _extract_json(text: str) -> dict:
     raise ValueError(f"Could not parse LLM output as JSON: {text[:300]}")
 
 
+class TokenCounter:
+    """Thread-safe counter for LLM token usage."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.total_tokens = 0
+        self.llm_calls = 0
+
+    def record(self, response):
+        """Extract token counts from a LangChain AIMessage response."""
+        prompt = 0
+        completion = 0
+
+        # Try usage_metadata first (standard LangChain)
+        meta = getattr(response, "usage_metadata", None)
+        if meta and isinstance(meta, dict):
+            prompt = meta.get("input_tokens", 0) or meta.get("prompt_tokens", 0)
+            completion = meta.get("output_tokens", 0) or meta.get("completion_tokens", 0)
+
+        # Fallback: response_metadata (Ollama often puts it here)
+        if not (prompt or completion):
+            rmeta = getattr(response, "response_metadata", {}) or {}
+            prompt = rmeta.get("prompt_eval_count", 0)
+            completion = rmeta.get("eval_count", 0)
+
+        with self._lock:
+            self.prompt_tokens += prompt
+            self.completion_tokens += completion
+            self.total_tokens += prompt + completion
+            self.llm_calls += 1
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return {
+                "prompt_tokens": self.prompt_tokens,
+                "completion_tokens": self.completion_tokens,
+                "total_tokens": self.total_tokens,
+                "llm_calls": self.llm_calls,
+            }
+
+    def reset(self):
+        with self._lock:
+            self.prompt_tokens = 0
+            self.completion_tokens = 0
+            self.total_tokens = 0
+            self.llm_calls = 0
+
+
 class LLMClient:
     def __init__(self, config: Config):
         self.cfg = config
@@ -47,6 +98,7 @@ class LLMClient:
             num_predict=4096,
         )
         self._json_parser = JsonOutputParser()
+        self.tokens = TokenCounter()
 
     def get_model(self, **overrides) -> ChatOllama:
         if not overrides:
@@ -79,6 +131,7 @@ class LLMClient:
                 lc_messages.append(AIMessage(content=m["content"]))
 
         response = model.invoke(lc_messages)
+        self.tokens.record(response)
         return _strip_think(response.content)
 
     def structured_chat(
@@ -112,6 +165,7 @@ class LLMClient:
                 lc_messages.append(AIMessage(content=m["content"]))
 
         response = json_model.invoke(lc_messages)
+        self.tokens.record(response)
         raw = _strip_think(response.content)
 
         try:

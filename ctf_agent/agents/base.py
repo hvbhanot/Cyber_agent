@@ -65,9 +65,14 @@ class BaseAgent(ABC):
                     answer = msg.content
                     break
 
-            # Record steps and scan for flags in all messages
+            # Record steps, count tokens, and scan for flags in all messages
             for msg in messages:
                 content = str(getattr(msg, "content", ""))
+
+                # Count tokens from AI messages (LangGraph bypasses LLMClient)
+                if msg.type == "ai":
+                    self.llm.tokens.record(msg)
+
                 if content:
                     flags = re.findall(self.cfg.flag_format, content)
                     for f in flags:
@@ -77,14 +82,16 @@ class BaseAgent(ABC):
                 # Record tool call steps in scratchpad
                 if hasattr(msg, "tool_calls") and msg.tool_calls:
                     for tc in msg.tool_calls:
-                        step = self.pad.new_step(f"Tool call: {tc.get('name', 'unknown')}")
-                        step.action = tc.get("name", "unknown")
+                        tool_name = tc.get("name", "unknown")
+                        step = self.pad.new_step(f"Tool call: {tool_name}")
+                        step.action = tool_name
                         step.action_input = tc.get("args", {})
 
                 # Record tool results
                 if msg.type == "tool":
                     if self.pad.steps:
                         self.pad.steps[-1].observation = content[:2000]
+                        self.pad._emit("tool_result", f"{self.pad.steps[-1].action} [ok]")
 
         except Exception as e:
             log.error(f"[{self.role}] LangGraph agent error: {e}")

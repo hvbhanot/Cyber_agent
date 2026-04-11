@@ -69,4 +69,53 @@ class ZstegTool(BaseTool):
         return ["zsteg", filepath]
 
 
-FORENSICS_TOOLS = [ExiftoolTool, BinwalkTool, SteghideTool, ForemostTool, ZstegTool]
+class PdfToTextTool(BaseTool):
+    spec = ToolSpec(
+        name="pdftotext",
+        description="Extract text from PDF files — reveals hidden text, embedded strings",
+        parameters={"filepath": "str", "flags": "str (optional)"},
+        binary="pdftotext",
+    )
+
+    def build_command(self, filepath: str = "", flags: str = "-layout", **kw) -> list[str]:
+        return ["pdftotext"] + flags.split() + [filepath, "-"]
+
+
+class TesseractTool(BaseTool):
+    spec = ToolSpec(
+        name="tesseract",
+        description="OCR — extract text from images (PNG, JPEG, TIFF)",
+        parameters={"filepath": "str"},
+        binary="tesseract",
+    )
+
+    def build_command(self, filepath: str = "", **kw) -> list[str]:
+        return ["tesseract", filepath, "stdout"]
+
+
+class VolatilityTool(BaseTool):
+    spec = ToolSpec(
+        name="volatility",
+        description="Memory forensics — analyze RAM dumps for processes, network, registry, etc.",
+        parameters={"filepath": "str", "plugin": "str — e.g. pslist, netscan, filescan, dumpfiles, hashdump"},
+        binary="volatility",
+    )
+
+    def build_command(self, filepath: str = "", plugin: str = "imageinfo", **kw) -> list[str]:
+        return ["volatility", "-f", filepath, plugin]
+
+
+class DdTool(BaseTool):
+    spec = ToolSpec(
+        name="dd_extract",
+        description="Extract bytes from a file at a specific offset — useful for carving embedded data",
+        parameters={"filepath": "str", "skip": "str — byte offset to start", "count": "str — bytes to extract"},
+        binary="dd",
+    )
+
+    def build_command(self, filepath: str = "", skip: str = "0", count: str = "512", **kw) -> list[str]:
+        return ["dd", f"if={filepath}", "bs=1", f"skip={skip}", f"count={count}", "status=none"]
+
+
+FORENSICS_TOOLS = [ExiftoolTool, BinwalkTool, SteghideTool, ForemostTool, ZstegTool,
+                   PdfToTextTool, TesseractTool, VolatilityTool, DdTool]
