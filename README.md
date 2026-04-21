@@ -64,7 +64,7 @@ Persisted to JSON between runs for post-mortem analysis.
 ## Quick Start
 
 ```bash
-git clone https://github.com/hvbhanot/Cyber_agent.git
+git clone [https://github.com/hvbhanot/CTF-Agent.git](https://github.com/hvbhanot/CTF-Agent)
 cd Cyber_agent
 chmod +x setup.sh
 ./setup.sh
